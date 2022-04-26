@@ -1,0 +1,150 @@
+---
+title: "生精细胞再分群"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+```
+
+
+```{r}
+# 导入初次分群细胞
+data <- readRDS('./data/testis.rds')
+
+# 标记细胞
+celltype = readxl::read_xlsx('./data/label.xlsx')
+new.cluster.ids <- celltype$raw_main_celltype
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+
+# 名称排序
+data@active.ident <- factor(data@active.ident, levels = sort(unique(celltype$raw_main_celltype)))
+data@meta.data$celltype <- data@active.ident
+
+rm(new.cluster.ids, celltype)
+```
+
+```{r}
+# 选出生精细胞
+tcell <- subset(data, subset = celltype %in% c('T cells' ))
+```
+
+```{r}
+# 加载数据
+data <- Read10X(data.dir ="./data/testis") 
+
+# 仅生精细胞
+data <- data[,intersect(colnames(tcell), colnames(data))]
+
+data <- CreateSeuratObject(counts = data, project = "sper", min.cells = 1)
+
+rm(tcell)
+```
+
+```{r}
+#分组
+data$orig.ident <- sub('.*\\-', '', colnames(data))
+data$orig.ident <- gsub("1", "Ctrl", data$orig.ident)
+data$orig.ident <- gsub("2", "ZIKV", data$orig.ident)
+
+# 细胞数
+table(data$orig.ident)
+```
+
+```{r}
+#归一化数据
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+#找到高度变异基因
+data <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 2000)
+#缩放数据
+data <- ScaleData(data, features=rownames(data))
+#进行PCA
+data <- RunPCA(data)
+# 聚类
+data <- FindNeighbors(data, reduction =  "pca" , dims = 1:10)
+data <- FindClusters(data, resolution = 0.8)
+# tSNE
+data <- RunTSNE(data, dims = 1:10)
+# tSNE图
+DimPlot(data, reduction = "tsne", label=TRUE, pt.size=1)
+```
+```{r}
+saveRDS(data, "./data/tcells.rds")
+```
+```{r}
+# 计算每群细胞细胞类型比例（主要细胞类型）
+library(reshape)
+number_main_type <- cast(data@meta.data, seurat_clusters+raw_main_celltype ~ ., value = 'orig.ident') 
+for (i in 1:length(number_main_type$seurat_clusters)) {
+  number_main_type[i, "clusters_all"] <- sum(number_main_type[number_main_type$seurat_clusters==number_main_type[i, "seurat_clusters"], "(all)"])
+}
+rm(i)
+number_main_type$percentage <- round(number_main_type$'(all)' / number_main_type$clusters_all *100, 2)
+number_main_type <- number_main_type[order(number_main_type$seurat_clusters, -number_main_type$percentage),]
+# 获得每群最多的细胞类型
+celltype_main <- number_main_type[!duplicated(number_main_type$seurat_clusters),c("seurat_clusters", "raw_main_celltype", "percentage")]
+
+# 画图
+number_main_type$raw_main_celltype <- factor(number_main_type$raw_main_celltype, levels = unique(number_main_type$raw_main_celltype))
+ggplot(number_main_type, aes(x=seurat_clusters, y=percentage, fill=raw_main_celltype))+
+  geom_bar(stat="identity",position="stack")+
+  theme_classic()+ #设置风格
+  theme(legend.title=element_blank())
+```
+
+```{r}
+DotPlot(data, features = c("Cd3d","Cd4","Cd8a"))
+```
+
+
+```{r}
+# 标记细胞
+celltype = readxl::read_xlsx('./data/T label.xlsx')
+new.cluster.ids <- celltype$raw_main_celltype
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+
+# 名称排序
+data@active.ident <- factor(data@active.ident, levels = sort(unique(celltype$raw_main_celltype)))
+data@meta.data$celltype <- data@active.ident
+
+rm(new.cluster.ids, celltype)
+```
+
+
+```{r}
+# 降维图
+DimPlot(data, reduction = "tsne", pt.size = 1, label = T, repel = T, label.size = 6, split.by = "orig.ident")+ggtitle("")
+ggsave("./figure/t/tsne_t.jpg", width =7, height = 4)
+```
+
+```{r}
+# 统计各群数量
+library(reshape)
+data$ident <- 1
+number_group <- cast(data@meta.data, celltype~orig.ident) 
+```
+
+```{r}
+# ZIKV表达量
+VlnPlot(data, features = c("Zikv"), pt.size=1)+ggtitle("ZIKV")+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+ggsave("./figure/t/vlnplot_zikv.jpg", width = 6, height = 4)
+```
+
+```{r}
+# ZIKV表达量
+DotPlot(data, features = c("Zikv"), scale.min = 0, scale = F)
+ggsave("./figure/t/Dot_zikv.pdf", width = 4, height = 3.5)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

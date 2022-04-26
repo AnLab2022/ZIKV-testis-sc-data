@@ -1,0 +1,178 @@
+---
+title: "go富集分析"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library("clusterProfiler")
+library("org.Mm.eg.db")
+library("ggplot2")
+```
+
+
+```{r}
+# 导入基因差异表达数据
+mono_zikv <- read.csv('./output/m/mono_zikv.csv')
+macro_zikv <- read.csv('./output/m/macro_zikv.csv')
+
+# 选择富集分析基因ID
+mono_zikv_up <- mono_zikv[(mono_zikv$avg_log2FC>0.25) & (mono_zikv$p_val<0.05),]$X
+macro_zikv_up <- macro_zikv[(macro_zikv$avg_log2FC>0.25) & (macro_zikv$p_val<0.05),]$X
+
+mono_zikv_up <- bitr(mono_zikv_up, fromType = 'SYMBOL', toType = c('ENSEMBL'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENSEMBL
+macro_zikv_up <- bitr(macro_zikv_up, fromType = 'SYMBOL', toType = c('ENSEMBL'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENSEMBL
+
+mono_zikv_down <- mono_zikv[(mono_zikv$avg_log2FC<(-0.25)) & (mono_zikv$p_val<0.05),]$X
+macro_zikv_down <- macro_zikv[(macro_zikv$avg_log2FC<(-0.25)) & (macro_zikv$p_val<0.05),]$X
+
+mono_zikv_down <- bitr(mono_zikv_down, fromType = 'SYMBOL', toType = c('ENSEMBL'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENSEMBL
+macro_zikv_down <- bitr(macro_zikv_down, fromType = 'SYMBOL', toType = c('ENSEMBL'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENSEMBL
+```
+
+```{r}
+# go富集分析
+go_mono_zikv_up <- enrichGO(mono_zikv_up, org.Mm.eg.db, keyType = "ENSEMBL", pvalueCutoff = 1, qvalueCutoff = 1, ont = "ALL",
+                      minGSSize = 0, maxGSSize=100000, pool = TRUE)
+go_macro_zikv_up<- enrichGO(macro_zikv_up, org.Mm.eg.db, keyType = "ENSEMBL", pvalueCutoff = 1, qvalueCutoff = 1, ont = "ALL",
+                      minGSSize = 0, maxGSSize=100000, pool = TRUE)
+
+go_mono_zikv_down <- enrichGO(mono_zikv_down, org.Mm.eg.db, keyType = "ENSEMBL", pvalueCutoff = 1, qvalueCutoff = 1, ont = "ALL",
+                      minGSSize = 0, maxGSSize=100000, pool = TRUE)
+go_macro_zikv_down<- enrichGO(macro_zikv_down, org.Mm.eg.db, keyType = "ENSEMBL", pvalueCutoff = 1, qvalueCutoff = 1, ont = "ALL",
+                      minGSSize = 0, maxGSSize=100000, pool = TRUE)
+```
+
+```{r}
+# 获得并保存go分析数据
+go_mono_zikv_up_result <- go_mono_zikv_up@result
+go_macro_zikv_up_result <- go_macro_zikv_up@result
+write.csv(go_mono_zikv_up_result, file='./output/m/go_mono_zikv_up_result.csv', row.names = FALSE)
+write.csv(go_macro_zikv_up_result, file='./output/m/go_macro_zikv_up_result.csv', row.names = FALSE)
+
+go_mono_zikv_down_result <- go_mono_zikv_down@result
+go_macro_zikv_down_result <- go_macro_zikv_down@result
+write.csv(go_mono_zikv_down_result, file='./output/m/go_mono_zikv_down_result.csv', row.names = FALSE)
+write.csv(go_macro_zikv_down_result, file='./output/m/go_macro_zikv_down_result.csv', row.names = FALSE)
+```
+
+
+
+
+```{r}
+# 计算Rich Factor
+library(tidyverse)
+
+go_mono_zikv_up_result <- separate(data = go_mono_zikv_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+go_mono_zikv_up_result$RichFactor = go_mono_zikv_up_result$Count/sapply(go_mono_zikv_up_result$BgCount, as.numeric)
+
+go_macro_zikv_up_result <- separate(data = go_macro_zikv_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+go_macro_zikv_up_result$RichFactor = go_macro_zikv_up_result$Count/sapply(go_macro_zikv_up_result$BgCount, as.numeric)
+
+go_mono_zikv_down_result <- separate(data = go_mono_zikv_down_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+go_mono_zikv_down_result$RichFactor = go_mono_zikv_down_result$Count/sapply(go_mono_zikv_down_result$BgCount, as.numeric)
+
+go_macro_zikv_down_result <- separate(data = go_macro_zikv_down_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+go_macro_zikv_down_result$RichFactor = go_macro_zikv_down_result$Count/sapply(go_macro_zikv_down_result$BgCount, as.numeric)
+```
+
+```{r}
+# 作条形图（上调）
+selected <- go_macro_zikv_up_result[10:1,]  #前十
+
+selected$Description <- factor(selected$Description, levels = selected$Description)
+ggplot(selected, aes(x=Description, y=-log10(qvalue)))+
+  geom_bar(stat = "identity", fill="#F8766D", color="black")+
+  geom_text(aes(label=Description), hjust=0, y=0.1, size=6)+
+  theme_classic()+
+  coord_flip()+  #横向
+  labs(x="", y='-log10 (q-value)', title="GO-term UP (Macrophage with ZIKV vs without ZIKV)")+
+  theme(axis.title.y=element_blank())+
+  theme(axis.text.y = element_blank())+
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(plot.title = element_text(size=20, hjust = 0))+
+  theme(axis.text.x = element_text(size=12))+ 
+  theme(axis.title.x = element_text(size=14))
+ggsave("./figure/m/go_macro_zikv_up_10.jpg", width = 7, height = 6)
+```
+
+```{r}
+# 作条形图（下调）
+selected <- go_macro_zikv_down_result[10:1,]
+
+selected$Description <- factor(selected$Description, levels = selected$Description)
+ggplot(selected, aes(x=Description, y=-log10(qvalue)))+
+  geom_bar(stat = "identity", fill="#619CFF", color="black")+
+  geom_text(aes(label=Description), hjust=0, y=0.1, size=6)+
+  theme_classic()+
+  coord_flip()+  #横向
+  labs(x="", y='-log10 (q-value)', title="GO-term DOWN (Macrophage with ZIKV vs without ZIKV)")+
+  theme(axis.title.y=element_blank())+
+  theme(axis.text.y = element_blank())+
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(plot.title = element_text(size=18, hjust = 0))+
+  theme(axis.text.x = element_text(size=12))+ 
+  theme(axis.title.x = element_text(size=14))
+ggsave("./figure/m/go_macro_zikv_down_10.jpg", width = 7, height = 6)
+```
+
+
+
+
+```{r}
+# 选择go术语的上下调基因数
+go_terms <- c('Apoptosis', "Autophagy - animal",  "Ferroptosis", "Necroptosis")
+
+go_filter <- merge(go_spg_zikv_up_result[go_spg_zikv_up_result$Description %in% go_terms, c(2,8)], 
+                     go_spg_zikv_down_result[go_spg_zikv_down_result$Description %in% go_terms, c(2,8)], 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+go_filter$Description <- factor(go_filter$Description, levels=rev(go_terms), ordered=TRUE)
+library(reshape)
+go_filter = melt(go_filter, id=c('Description'))
+go_filter$variable <- factor(go_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 模糊选择go术语的上下调基因数
+go_term = 'signaling pathway'
+
+go_filter <- merge(subset(go_spt_zikv_up_result, grepl(go_term, Description),select =c('Description', 'qvalue')),
+                     subset(go_spt_zikv_down_result, grepl(go_term, Description),select =c('Description', 'qvalue')), 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+go_filter <- go_filter[order(go_filter$qvalueUp), ]
+go_filter <- go_filter[10:1, ]
+go_filter <- go_filter[order(go_filter$qvalueUp), ]
+go_filter$Description <- factor(go_filter$Description, levels=rev(go_filter$Description), ordered=TRUE)
+library(reshape)
+go_filter = melt(go_filter, id=c('Description'))
+go_filter$variable <- factor(go_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 作go术语上下调的条形图
+ggplot(go_filter, aes(x=Description, y=-log10(value), fill=variable))+
+  geom_bar(stat = 'identity', position = position_dodge(0.9), color="black")+
+  theme_classic()+ #设置风格
+  labs(x="", y='-log10 (q-value)', title="")+
+  theme(legend.title=element_blank())+  #设置图例标题
+  theme(axis.text.x = element_text(hjust = 1, size=12))+  
+  theme(axis.text.y = element_text(size=14))+  
+  theme(axis.line=element_line(linetype=1,color="black",size=1))+
+  theme(axis.ticks=element_line(color="black",size=1,lineend = 1))+
+  coord_flip()+  #横向
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(axis.title.x = element_text(size=14))+
+  theme(legend.text  = element_text(size=14))+
+  scale_fill_manual(values = c("#F8766D", "#619CFF"))
+ggsave("./figure/sper/go_spg_zikv_cell death.jpg", width = 7, height = 4.5)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

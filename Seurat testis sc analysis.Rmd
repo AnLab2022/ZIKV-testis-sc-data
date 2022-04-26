@@ -1,0 +1,256 @@
+---
+title: "Seurat"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+```
+
+```{r}
+# 加载数据
+data <- Read10X(data.dir ="./data/testis") 
+data <- CreateSeuratObject(counts = data, project = "testis", min.cells = 1)
+```
+
+```{r}
+#过滤细胞和基因
+cell_cluster <- read.csv("./data/seurat_loupe_cell_tsne_cluster.csv")
+genes <- readxl::read_excel("./data/all_cluster_gene_avg_exp.xlsx")
+data <- data[intersect(genes$Cluster[-length(genes$Cluster)], rownames(data)),intersect(cell_cluster$Cell, colnames(data))]
+rm(genes)
+
+#分组
+data$orig.ident <- sub('.*\\-', '', colnames(data))
+data$orig.ident <- gsub("1", "Ctrl", data$orig.ident)
+data$orig.ident <- gsub("2", "ZIKV", data$orig.ident)
+
+# 细胞数
+table(data$orig.ident)
+```
+
+```{r}
+#归一化数据
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+```{r}
+#找到高度变异基因
+data <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 2000)
+```
+
+```{r}
+#缩放数据
+data <- ScaleData(data, features=rownames(data))
+```
+```{r}
+#进行PCA
+data <- RunPCA(data)
+```
+```{r}
+# 聚类
+data <- FindNeighbors(data, reduction =  "pca" , dims = 1:10)
+data <- FindClusters(data, resolution = 0.8)
+```
+```{r}
+# tSNE
+data <- RunTSNE(data, dims = 1:10)
+```
+
+```{r}
+# tSNE图
+DimPlot(data, reduction = "tsne", label=TRUE, pt.size=1)
+```
+
+```{r}
+saveRDS(data, "./data/testis.rds")
+```
+```{r}
+# 标记细胞
+celltype = readxl::read_xlsx('./data/label.xlsx')
+new.cluster.ids <- celltype$raw_main_celltype
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+
+# 名称排序
+data@active.ident <- factor(data@active.ident, levels = sort(unique(celltype$raw_main_celltype)))
+data@meta.data$celltype <- data@active.ident
+
+table(data@active.ident)
+
+rm(new.cluster.ids, celltype)
+```
+
+```{r}
+# 总降维图
+DimPlot(data, reduction = "tsne", pt.size = 1, label = T, repel = T, label.size = 4,
+        split.by = "orig.ident"
+        )+theme(axis.line = element_line(size=1))
+ggsave('./figure/tSNE_all1.jpg', 
+       width = 10, height =4, dpi=300
+
+       )
+```
+
+```{r}
+# 分组降维图
+DimPlot(data, reduction = "tsne", pt.size = 1, label = T, repel = T, label.size = 3,
+        split.by = 'orig.ident'
+        )
+ggsave('tSNE_split.pdf', 
+       width = 12, height = 5
+       )
+```
+
+```{r}
+# 获取注释信息
+library('biomaRt')
+library("curl")
+
+# 加载小鼠基因库
+mart <- useDataset("mmusculus_gene_ensembl", useMart("ensembl"))  
+
+# 获取基因注释
+genes <- getBM(attributes=c('ensembl_gene_id','external_gene_name',"description", "entrezgene_id"),filters = 'external_gene_name', values = rownames(data), mart = mart)
+
+write.csv(genes, "./output/ref_mouse.csv")
+```
+
+```{r}
+# 统计各群数量
+library(reshape)
+data$ident <- 1
+number_group <- cast(data@meta.data, celltype~orig.ident) 
+```
+
+```{r}
+# ZIKV降维图
+FeaturePlot(data, reduction = "tsne", features = c("Zikv"), pt.size=0.5, split.by = 'orig.ident')
+ggsave('tSNE_Zikv.pdf', width = 10, height = 5)
+```
+
+```{r}
+# 补体
+FeaturePlot(data, features = c("C1qa", "C1qb", "C1qc"), pt.size=1, split.by = "orig.ident", by.col = F)
+ggsave('./figure/feature_complement1.jpg', width = 7.5, height = 5)
+
+FeaturePlot(data, features = c("C1ra","C1s1", "C3"), pt.size=1, split.by = "orig.ident", by.col = F)
+ggsave('./figure/feature_complement2.jpg', width = 7.5, height = 5)
+
+FeaturePlot(data, features = c("Cfh","Cfp", "Masp1"), pt.size=1, split.by = "orig.ident", by.col = F)
+ggsave('./figure/feature_complement3.jpg', width = 7.5, height = 5)
+
+FeaturePlot(data, features = c("Masp2","Mbl1", "Mbl2"), pt.size=1, split.by = "orig.ident", by.col = F)
+ggsave('./figure/feature_complement4.jpg', width = 7.5, height = 5)
+```
+
+
+
+
+
+```{r}
+# 选出感染组数据
+data_zikv <- subset(data, orig.ident == "ZIKV")
+data_zikv$celltype <- data_zikv@active.ident
+```
+
+
+```{r}
+# ZIKV点图
+VlnPlot(data_zikv, features = c("Zikv"))
+ggsave('Dotplot_Zikv.pdf', width = 4, height = 5)
+```
+
+
+```{r}
+# 从感染组中选出单核巨噬细胞
+data_zikv_m <- subset(data_zikv, celltype %in% c("Monocytes", "Macrophages"))
+data_zikv_m$celltype <- data_zikv_m@active.ident
+summary(data_zikv_m@active.ident)
+```
+
+
+```{r}
+# 从感染组中的单核巨噬细胞分为带ZIKV和不带ZIKV的
+data_zikv_m$ZIKV <- PercentageFeatureSet(data_zikv_m, pattern = "Zikv") * data_zikv_m$nCount_RNA / 100
+data_zikv_m$ZIKV[data_zikv_m$ZIKV>0] <- "with ZIKV"
+data_zikv_m$ZIKV[data_zikv_m$ZIKV==0] <- "without ZIKV"
+data_zikv_m$celltype_ZIKV <- factor(paste(data_zikv_m$celltype, data_zikv_m$ZIKV, sep=" "))
+data_zikv_m@active.ident <- data_zikv_m$celltype_ZIKV
+summary(data_zikv_m@active.ident)
+```
+
+```{r}
+#绘制感染组中带ZIKV和不带ZIKV的单核巨噬细胞数量
+library("reshape")
+number_of_m <- cast(data_zikv_m@meta.data, celltype+ZIKV~.)
+ggplot(number_of_m, aes(x=celltype, y=`(all)`, fill=ZIKV))+ #添加数据
+  geom_bar(stat = "identity", position = position_dodge(), width=0.8, color="black")+  #绘制柱状图
+  theme_classic()+ #设置风格
+  labs(title="Monocytes and macrophages", x='', y="Number of cells")+ #设置标题
+  theme(legend.title=element_blank())+  #设置图例标题
+  theme(plot.title = element_text(size=18, hjust = 0.5))+  #设置标题格式
+  theme(axis.text.x =element_text(size=16),axis.text.y =element_text(size=14),axis.title=element_text(size=18))+ 
+  theme(legend.text=element_text(size=14))+
+  geom_text(aes(label = `(all)`), size = 5, position=position_dodge(0.8), vjust=-0.3)+
+  scale_fill_manual(values = c("#F8766D", "#619CFF"))+
+  ylim(0, 2400)
+ggsave("./figure/m/number.jpg", width = 6, height = 4)
+```
+
+```{r}
+# 感染组中单核巨噬细胞的补体点图1
+DotPlot(data_zikv_m, features = c("C1qa", "C1qb", "C1qc", "C1ra", "C1rl", "C1s1", "C1s2","C3"))+theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))
+ggsave('Dotplot_zikv_m_comp1.pdf', width = 8, height = 4.5)
+```
+
+```{r}
+# 感染组中单核巨噬细胞的补体点图2
+DotPlot(data_zikv_m, features = c("Mbl1", "Mbl2", "Masp1", "Masp2", "Cfb", "Cfp", "Cfh"))
+ggsave('Dotplot_zikv_m_comp2.pdf', width = 8, height = 4.5)
+```
+
+```{r}
+# 单核巨噬细胞差异分析
+mono_zikv <- FindMarkers(data_zikv_m, ident.1 = "Monocytes with ZIKV", ident.2 = "Monocytes without ZIKV",test.use="bimod")
+mono_zikv <- mono_zikv[order(-mono_zikv$avg_log2FC),]
+write.csv(mono_zikv, './output/m/mono_zikv.csv')
+
+macro_zikv <- FindMarkers(data_zikv_m, ident.1 = "Macrophages with ZIKV", ident.2 = "Macrophages without ZIKV",test.use="bimod")
+macro_zikv <- macro_zikv[order(-macro_zikv$avg_log2FC),]
+write.csv(macro_zikv, './output/m/macro_zikv.csv')
+```
+
+
+```{r}
+# 单核巨噬细胞差异分析
+mono.markers <- FindMarkers(data, ident.1 = "Monocytes", test.use="bimod")
+mono.markers <- mono.markers[order(-mono.markers$avg_log2FC),]
+write.csv(mono.markers, './data/Mono_markers.csv')
+
+macro.markers <- FindMarkers(data, ident.1 = "Macrophages", test.use="bimod")
+macro.markers <- macro.markers[order(-macro.markers$avg_log2FC),]
+```
+
+```{r}
+# 保存单核巨噬细胞的差异基因分析
+write.csv(mono.markers, './data/Mono_markers.csv')
+write.csv(macro.markers, './data/Macro_markers.csv')
+```
+
+```{r}
+# 巨噬细胞vs单核细胞
+macro_mono <- FindMarkers(data, ident.1 = "Macrophages", ident.2 = "Monocytes", test.use="bimod")
+macro_mono <- macro_mono[order(-macro_mono$avg_log2FC),]
+write.csv(macro_mono, './data/Macro_vs_Mono.csv')
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

@@ -1,0 +1,93 @@
+---
+title: "KEGG富集分析"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library("clusterProfiler")
+library("org.Mm.eg.db")
+library("ggplot2")
+library("enrichplot")
+```
+
+
+```{r}
+# 导入基因差异表达数据
+result <- read.csv('./data/sertoli_zikv_markers.csv')
+```
+
+```{r}
+# 获取富集分析基因ID
+name <- result$X
+
+name <- bitr(name, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+```
+
+```{r}
+# 获取logFC并命名
+genes <- result$avg_log2FC
+
+names(genes) <- name
+
+str(genes)
+```
+
+```{r}
+# GSEA-KEGG富集分析
+gsea<- gseKEGG(genes, "mmu", keyType = "kegg", pvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+```
+
+```{r}
+# 获得并保存GSEA-KEGG分析数据
+gsea_result <- gsea@result
+write.csv(gsea_result, file='./data/gsea_sertoli_zikv_result.csv', row.names = FALSE)
+```
+
+```{r}
+# 显示单核细胞的GSEA图
+geneID = c('mmu04210')
+gseaplot2(gsea, geneSetID = geneID, pvalue_table = T, base_size = 16)
+ggsave('gsea_apoptosis.jpg', width = 8, height = 7)
+```
+
+```{r}
+# 显示巨噬细胞的GSEA图
+geneID = c('mmu04668','mmu04145', 'mmu04142')
+gseaplot2(gsea_macro, geneSetID = geneID ,pvalue_table = T, base_size = 16)
+ggsave('gsea_macro.pdf', width = 8, height = 7)
+```
+```{r}
+# 分开显示单核细胞的GSEA图
+geneID = c('mmu04668','mmu04145', 'mmu04142')
+
+gseaplot2(gsea_mono, geneSetID = geneID[1], color="#619CFF" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_mono_tnf.pdf', width = 8, height = 7)
+
+gseaplot2(gsea_mono, geneSetID = geneID[2], color="#00BA38" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_mono_phag.pdf', width = 8, height = 7)
+
+gseaplot2(gsea_mono, geneSetID = geneID[3], color="#F8766D" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_mono_lyso.pdf', width = 8, height = 7)
+```
+```{r}
+# 分开显示单核细胞的GSEA图
+geneID = c('mmu04668','mmu04145', 'mmu04142')
+
+gseaplot2(gsea_macro, geneSetID = geneID[1], color="#619CFF" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_macro_tnf.pdf', width = 8, height = 7)
+
+gseaplot2(gsea_macro, geneSetID = geneID[2], color="#00BA38" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_macro_phag.pdf', width = 8, height = 7)
+
+gseaplot2(gsea_macro, geneSetID = geneID[3], color="#F8766D" ,pvalue_table = T, base_size = 16)
+ggsave('gsea_macro_lyso.pdf', width = 8, height = 7)
+```
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

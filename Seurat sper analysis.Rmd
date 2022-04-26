@@ -1,0 +1,276 @@
+---
+title: "生精细胞再分群"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+```
+
+
+```{r}
+# 导入初次分群细胞
+data <- readRDS('./data/testis.rds')
+
+# 标记细胞
+celltype = readxl::read_xlsx('./data/label.xlsx')
+new.cluster.ids <- celltype$raw_main_celltype
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+
+# 名称排序
+data@active.ident <- factor(data@active.ident, levels = sort(unique(celltype$raw_main_celltype)))
+data@meta.data$celltype <- data@active.ident
+
+rm(new.cluster.ids, celltype)
+```
+
+```{r}
+# 选出生精细胞
+sper <- subset(data, subset = celltype %in% c('Spermatocyte', 'Spermatid1', 'Spermatid2', 'Spermatid3' ))
+```
+
+```{r}
+# 加载数据
+data <- Read10X(data.dir ="./data/testis") 
+
+# 仅生精细胞
+data <- data[,intersect(colnames(sper), colnames(data))]
+
+data <- CreateSeuratObject(counts = data, project = "sper", min.cells = 1)
+
+rm(sper)
+```
+
+```{r}
+#分组
+data$orig.ident <- sub('.*\\-', '', colnames(data))
+data$orig.ident <- gsub("1", "Ctrl", data$orig.ident)
+data$orig.ident <- gsub("2", "ZIKV", data$orig.ident)
+
+# 细胞数
+table(data$orig.ident)
+```
+```{r}
+# 载入精子数据
+data <- readRDS('./data/sper_raw.rds')
+```
+
+
+```{r}
+#归一化数据
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+#找到高度变异基因
+data <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 2000)
+#缩放数据
+data <- ScaleData(data, features=rownames(data))
+#进行PCA
+data <- RunPCA(data)
+# 聚类
+data <- FindNeighbors(data, reduction =  "pca" , dims = 1:10)
+data <- FindClusters(data, resolution = 0.5)
+# tSNE
+data <- RunTSNE(data, dims = 1:10)
+# tSNE图
+DimPlot(data, reduction = "tsne", label=TRUE, pt.size=1)
+```
+```{r}
+saveRDS(data, "./data/sper.rds")
+```
+
+```{r}
+# 精原干细胞
+DotPlot(data, features = c("Utf1" ,"Gfra1", "PLZF"))
+ggsave("./figure/sper/ssc.pdf")
+```
+
+```{r}
+# 精原细胞
+DotPlot(data, features = c("Hells" ,"Kif5b", 
+                           "Sms", "Tktl1", "Kit", "Stra8"))
+ggsave("./figure/sper/spg.pdf")
+```
+
+```{r}
+# 精母细胞
+DotPlot(data, features = c("Arl6ip1", "Nol8", "Ccdc62", "Acyp1",
+                           "Sycp3", "H2ax", "Piwil1", "Ovol2"))
+ggsave("./figure/sper/spc.pdf")
+```
+```{r}
+# 精子细胞
+DotPlot(data, features = c("Lqcf6", "Pex5l", "Unc80", 
+                           "Cby3", "Abhd5", "Reep6", "Ttc24",
+                            "Sirt1", "Prm1"))
+ggsave("./figure/sper/spt.pdf")
+```
+```{r}
+#所有细胞
+DotPlot(data, features = c("Hells" ,"Kif5b", "Sms", "Stra8",
+                            "Ccdc62", "Acyp1", "Sycp3", "Piwil1", "Ovol2",
+                           "Cby3", "Abhd5", "Reep6", "Ttc24","Prm1"))+theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))
+ggsave("./figure/sper/sper_marker.pdf", width = 8, height = 4)
+```
+
+
+```{r}
+# 标记细胞
+celltype = readxl::read_xlsx('./data/sper label.xlsx')
+new.cluster.ids <- celltype$raw_main_celltype
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+
+# 名称排序
+data@active.ident <- factor(data@active.ident, levels = sort(unique(celltype$raw_main_celltype)))
+data@meta.data$celltype <- data@active.ident
+
+rm(new.cluster.ids, celltype)
+```
+
+```{r}
+saveRDS(data, "./data/sper_anno.rds")
+```
+
+```{r}
+data@active.ident <- factor(data@active.ident, levels = c("Spermatogonia", "Spermatocyte", "Spermatids"))
+```
+
+```{r}
+# 降维图
+DimPlot(data, reduction = "tsne", pt.size = 1, label = T, repel = T, label.size = 5,
+        #group.by = "seurat_clusters"
+        split.by = "orig.ident"
+        )+ggtitle("")+theme(axis.line = element_line(size=1))
+ggsave("./figure/sper/tsne_group.jpg", width =10, height = 5)
+```
+
+```{r}
+# 统计各群数量
+library(reshape)
+data$ident <- 1
+number_group <- cast(data@meta.data, celltype+orig.ident~.) 
+```
+
+```{r}
+# DDX4表达量
+VlnPlot(data, features = c("Ddx4"))+ggtitle("DDX4")+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))+theme(axis.title.y  = element_text(size=16))
+ggsave("./figure/sper/vlnplot_ddx4.jpg", width = 7, height = 5)
+
+DotPlot(data, features = c("Ddx4"), scale.min = 0)+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))+theme(axis.title.y  = element_text(size=16))
+ggsave("./figure/sper/Dotplot_ddx4.pdf", width = 4.5, height = 3.5)
+```
+
+
+```{r}
+# 选出感染组
+zikv <- subset(data, orig.ident=="ZIKV")
+```
+
+```{r}
+# ZIKV表达量
+VlnPlot(zikv, features = c("Zikv"))+ggtitle("ZIKV")+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))
+ggsave("./figure/sper/vlnplot_zikv.jpg", width = 7, height = 5)
+```
+
+```{r}
+# ZIKV表达量
+DotPlot(zikv, features = c("Zikv"), scale.min = 0)+theme(axis.line = element_line(size=1))+theme(axis.text = element_text(size=16))
+ggsave("./figure/sper/Dot_zikv.pdf", width = 4.5, height = 3.5)
+```
+
+```{r}
+# 细胞死亡基因
+genes <- c("Casp3", "Casp8", "Casp9", "Fas", "Bak1","Gzmb")  #凋亡相关基因 Apoptosis-related genes
+genes <- c("Casp1", "Casp4", "Gsdmd")  #焦亡相关基因 Pyroptosis-related genes
+genes <- c("Becn1", "Atg5", "Atg7", "Atg16l1")  #自噬相关基因 Autophagy-related genes
+genes <- c("Trp53", "Hmox1", "Cdkn2a" ,"Nfe2l2")  #铁死亡相关基因 Ferroptosis-related genes
+genes <- c("Tnf", "Ripk1", "Ripk3", "Cyld")  #坏凋相关基因 Necroptosis-related genes
+
+genes <- c("Casp3", "Casp8", "Casp9", "Gzmb", "Casp1", "Gsdmd", "Becn1", "Atg5", "Atg7", "Trp53", "Hmox1", "Cdkn2a" ,"Nfe2l2", "Tnf", "Ripk1", "Ripk3", "Cyld")   #细胞死亡相关
+```
+
+```{r}
+# 减数分裂相关基因
+genes <- c("Mlh3","Hormad1", "Sycp3")
+DotPlot(data, features = genes)
+DotPlot(data, features = genes, split.by = "orig.ident")
+DotPlot(data, features = genes, idents="SPG", group.by = "orig.ident")
+ggsave("./figure/sper/spc_meiosis.pdf", width = 6, height = 3.5)
+```
+
+```{r}
+# Itg相关
+genes <- c("Itgav", "Itgb5")
+DotPlot(data, features = genes)
+DotPlot(data, features = genes, split.by = "orig.ident")+scale_color_manual(values = c("#F8766D","gray" ,"#619CFF"))
+DotPlot(data, features = genes, idents="SPC", group.by = "orig.ident")
+ggsave("./figure/sper/dotplot_itg.pdf", width = 5, height = 3.5)
+```
+
+```{r}
+a <- FetchData(subset(data, idents="SPC"), vars=c("Itgav", "Zikv"), slot="data")
+a <- a[which(a$Itgav > 0 & a$Zikv > 0),]
+ggplot(a, aes(Zikv, Itgav))+
+  theme_classic()+
+  geom_point()+
+  geom_smooth(method='lm', span=1, se=T)+
+  ylim(0,3)+
+  ggtitle("SPC")
+```
+
+```{r}
+p1 <- VlnPlot(data, features = genes[1])+ theme(legend.position = 'none')+theme(axis.title.x = element_blank())
+p2<- FeaturePlot(data, features = genes[1])+ theme(axis.title.x = element_blank())+theme(axis.title.y = element_blank())
+p1+p2+patchwork::plot_layout(ncol=2, byrow = FALSE)
+ggsave("./figure/sper/cell_cycle_Top2a.pdf", width = 7, height = 3.5)
+```
+
+```{r}
+data$groupcelltype <- factor(paste(data$celltype, data$orig.ident, sep = "_"))
+data@active.ident <- data$groupcelltype
+table(data@active.ident)
+```
+
+
+```{r}
+spt_zikv <- FindMarkers(data, ident.1 = "Spermatids_ZIKV", ident.2 = "Spermatids_Ctrl",test.use="bimod", logfc.threshold=0, min.pct = 0)
+spc_zikv <- FindMarkers(data, ident.1 = "Spermatocyte_ZIKV", ident.2 = "Spermatocyte_Ctrl",test.use="bimod", logfc.threshold=0, min.pct = 0)
+spg_zikv <- FindMarkers(data, ident.1 = "Spermatogonia_ZIKV", ident.2 = "Spermatogonia_Ctrl",test.use="bimod", logfc.threshold=0, min.pct = 0)
+write.csv(spt_zikv, "./output/spt_zikv.csv")
+write.csv(spc_zikv, "./output/spc_zikv.csv")
+write.csv(spg_zikv, "./output/spg_zikv.csv")
+```
+
+```{r}
+spt_zikv <- FindMarkers(data, ident.1 = "Spermatids",test.use="bimod")
+spc_zikv <- FindMarkers(data, ident.1 = "Spermatocyte",test.use="bimod")
+spg_zikv <- FindMarkers(data, ident.1 = "Spermatogonia",test.use="bimod")
+write.csv(spt_zikv, "./output/sper/spt.csv")
+write.csv(spc_zikv, "./output/sper/spc.csv")
+write.csv(spg_zikv, "./output/sper/spg.csv")
+```
+
+```{r}
+# 选出State2和State3的精母细胞
+spc_23 <- subset(data,  State==c("2", "3"), idents="SPC")
+spc_23@active.ident <- spc_23$State
+
+# 差异分析
+spc_2_degs <- FindMarkers(spc_23, ident.1 = "2",test.use="bimod")
+spc_2_degs <- spc_2_degs[order(-spc_2_degs$avg_log2FC),]
+write.csv(spc_2_degs, "./output/sper/spc_2vs3.csv")
+```
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

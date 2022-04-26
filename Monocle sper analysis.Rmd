@@ -1,0 +1,238 @@
+---
+title: "拟时序分析"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(monocle)
+
+data <- readRDS('./data/sper_anno.rds')
+```
+
+
+```{r}
+# 整理数据
+new_data = as(as.matrix(data@assays$RNA@counts), "sparseMatrix")
+pd = new("AnnotatedDataFrame", data = data@meta.data)
+fData = data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd = new("AnnotatedDataFrame", data = fData)
+monocle = newCellDataSet(new_data, phenoData = pd, featureData = fd)
+
+rm(new_data, pd, fData, fd)
+```
+
+
+```{r}
+#计算SizeFactor和Dispersions
+monocle <- estimateSizeFactors(monocle)
+monocle <- estimateDispersions(monocle)
+```
+```{r}
+# 过滤低表达基因
+monocle <- detectGenes(monocle, min_expr = 0.1)
+expressed_genes <- row.names(subset(fData(monocle),
+    num_cells_expressed >= 10))
+
+```
+
+
+```{r}
+# 找出高变基因1（快速）
+disp_table <- dispersionTable(monocle)
+ordering_genes <- subset(disp_table, mean_expression >= 0.1 & dispersion_empirical >= 1 * dispersion_fit)$gene_id
+monocle <- setOrderingFilter(monocle,ordering_genes)
+plot_ordering_genes(monocle)
+```
+
+```{r}
+# 找出高变基因2
+DEG_genes <-
+    differentialGeneTest(monocle[expressed_genes,],
+          fullModelFormulaStr = '~celltype',
+          cores = 64)
+ordering_genes <-
+    row.names(clustering_DEG_genes)[order(clustering_DEG_genes$qval)][1:1000]
+monocle <- setOrderingFilter(monocle,ordering_genes)
+plot_ordering_genes(monocle)
+```
+
+```{r}
+#数据降维
+monocle <- reduceDimension(
+  monocle,
+  max_components = 2,
+  method = 'DDRTree')
+monocle <- orderCells(monocle,
+                      )
+```
+
+
+```{r}
+save(monocle, file = "./output/time_sper.rds")
+```
+
+```{r}
+load("./output/time_sper.rds")
+monocle@phenoData@data[["celltype"]] <- factor(monocle@phenoData@data[["celltype"]], levels = c("Spermatogonia", "Spermatocyte", "Spermatids"))
+```
+
+
+```{r}
+# 轨迹图
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "celltype")+theme(legend.title = element_blank())+theme(legend.text = element_text(size=10))
+ggsave("./figure/sper/monocle/tra_celltype.jpg", width = 4, height = 4)
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "celltype")+ facet_wrap(~celltype, nrow = 1)+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/tra_celltype_split.jpg", width = 8, height = 4)
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "State")+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/tra_state.jpg", width = 5, height = 5)
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "Pseudotime")
+#ggsave("./figure/sper/monocle/tra_pseudotime.jpg", width = 5, height = 5)
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "orig.ident")+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/tra_group.jpg", width = 5, height = 5)
+plot_cell_trajectory(monocle,cell_size = 1,color_by = "orig.ident")+ facet_wrap(~orig.ident, nrow = 1)+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/tra_group_split.jpg", width = 6, height = 4)
+```
+
+```{r}
+# 轨迹进化图
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "celltype")+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/comtra_celltype.jpg", width = 5, height = 4.5)
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "celltype")+ facet_wrap(~celltype, nrow = 1)+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/comtra_celltype_split.jpg", width = 6, height = 4)
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "State")+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/comtra_state.jpg", width = 5, height = 5)
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "Pseudotime")
+ggsave("./figure/sper/monocle/comtra_Pseudotime.jpg", width = 5, height = 5)
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "orig.ident")+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/comtra_group.jpg", width = 5, height = 5)
+plot_complex_cell_trajectory(monocle,cell_size = 1,color_by = "orig.ident")+ facet_wrap(~orig.ident, nrow = 1)+theme(legend.title = element_blank())+theme(legend.text = element_text(size=12))
+ggsave("./figure/sper/monocle/comtra_group_split.jpg", width = 6, height = 4)
+```
+```{r}
+# 统计各群数量
+library(reshape)
+data$ident <- 1
+number_group <- cast(pData(monocle), State~orig.ident) 
+data$State <- pData(monocle)$State
+```
+
+```{r}
+# 选择基因
+genes <- c("Ncl","Ptma","Tex101","Sycp1")   #SPG高表达基因
+genes <- c("Tmsb4x", "Cd74", "Lyz2", "Apoe")  #SPC高表达基因
+genes <- c("Prm2","Prm1","Tnp2","Tssk6")  #SPT高表达基因
+
+genes <- c("Top2a", "Cdk1", "Mki67")  #细胞周期基因
+genes <- c("Mlh3","Hormad1")  #减数分裂
+genes <- c("Zikv", "Itgav")
+
+genes <- factor(genes, levels = genes)
+```
+
+
+```{r}
+# 抖动点图
+plot_genes_jitter(monocle[genes,],
+                  grouping = "State",
+                  color_by = "State",
+                  ncol = 2,  #列数
+                  min_expr = 0.1)
+```
+
+
+```{r}
+# 抖动点图
+plot_genes_violin(monocle[genes,],
+                  grouping = "State",
+                  color_by = "State",
+                  ncol = 2,  #列数
+                  min_expr = 0.1,
+                  cell_size=1)
+```
+
+
+```{r}
+# 轨迹点图
+plot_genes_in_pseudotime(monocle[genes,], color_by = "State", ncol = 2)
+plot_genes_in_pseudotime(monocle[genes,], color_by = "celltype", ncol = 2)+theme(legend.title = element_blank())+theme(legend.text = element_text(size=14))+theme(plot.title = element_text(size=14))
+ggsave("./figure/sper/monocle/spc_diff.jpg", width = 6, height = 3.5)
+```
+
+```{r}
+pData(monocle)$ZIKV = FetchData(data, vars=c("Zikv"), slot="data")$Zikv
+plot_complex_cell_trajectory(monocle, color_by = "ZIKV")+ labs(color='Expression of ZIKV') + scale_color_gsea() 
+ggsave("./figure/sper/monocle/comtra_Zikv.jpg", width = 5, height = 5)
+```
+
+
+```{r}
+# 寻找细胞类型和状态的差异基因
+diff_res <- differentialGeneTest(monocle[expressed_genes,],  #分析的基因
+                    fullModelFormulaStr = "~celltype")  #分类方式
+```
+
+```{r}
+# 寻找随时间变化的基因
+diff_res <- differentialGeneTest(monocle[disp.genes,],  #分析的基因
+                    fullModelFormulaStr = "~sm.ns(Pseudotime)", cores=32) 
+sig_gene_names <- row.names(subset(diff_res, qval < 0.05))
+```
+
+
+```{r}
+# 绘制热图
+p <- plot_pseudotime_heatmap(monocle[genes,],
+                show_rownames = T, 
+                return_heatmap=T)
+p
+ggsave("./figure/sper/monocle/heatpmap.pdf", p, width = 5, height = 10)
+```
+
+
+
+
+```{r}
+# 分析分支
+BEAM_res <- BEAM(monocle[rownames(spc_2_degs)[c(1:20, (length(spc_2_degs$avg_log2FC)-20):length(spc_2_degs$avg_log2FC))],], branch_point = 1)
+BEAM_res <- BEAM_res[order(BEAM_res$qval),]
+BEAM_res <- BEAM_res[,c("gene_short_name", "pval", "qval")
+```
+
+
+```{r}
+# 分支热图
+p <- plot_genes_branched_heatmap(monocle[rownames(BEAM_res[BEAM_res$use_for_ordering=="TRUE",]),],
+                            branch_point = 1,  #第几个分支
+                            num_clusters = 2,  #基因聚类数量
+                            branch_labels = c("State 2", "State 3"),
+                            use_gene_short_name = T,
+                            show_rownames = T,
+                            return_heatmap=T)
+ggsave("./figure/sper/monocle/BEAM_heatmap_23diff.jpg", p$ph_res, width = 4, height = 4)
+```
+
+```{r}
+# 分支基因
+plot_genes_branched_pseudotime(monocle[rownames(BEAM_res[BEAM_res$use_for_ordering=="TRUE",]),],
+                       branch_point = 1,
+                       branch_labels = c("State 2", "State 3"),
+                       color_by = "State",
+                       ncol = 2)
+ggsave("./figure/sper/monocle/BEAM_23diff.jpg", height = 20, width = 8)
+```
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

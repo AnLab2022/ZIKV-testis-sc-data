@@ -1,0 +1,126 @@
+---
+title: "KEGG富集分析"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library("clusterProfiler")
+library("org.Mm.eg.db")
+library("ggplot2")
+```
+
+
+```{r}
+# 导入基因差异表达数据
+mono_result <- read.csv('./data/Mono_markers.csv')
+macro_result <- read.csv('./data/Macro_markers.csv')
+
+# 选择富集分析基因ID
+mono_up <- mono_result[(mono_result$avg_log2FC>0) & (mono_result$p_val<0.05),]$X
+macro_up <- macro_result[(macro_result$avg_log2FC>0) & (macro_result$p_val<0.05),]$X
+
+mono_up <- bitr(mono_up, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+macro_up <- bitr(macro_up, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+```
+
+```{r}
+# KEGG富集分析
+kegg_mono_up <- enrichKEGG(mono_up, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+kegg_macro_up <- enrichKEGG(macro_up, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+```
+
+```{r}
+# 获得并保存KEGG分析数据
+kegg_mono_up_result <- kegg_mono_up@result
+kegg_macro_up_result <- kegg_macro_up@result
+#write.csv(kegg_mono_up_result, file='./data/kegg_mono_up.csv', row.names = FALSE)
+#write.csv(kegg_macro_up_result, file='./data/kegg_macro_up.csv', row.names = FALSE)
+```
+
+```{r}
+# 清除内存
+rm(mono_result, macro_result, mono_up, macro_up, kegg_mono_up, kegg_macro_up)
+```
+
+```{r}
+# 计算Rich Factor
+library(tidyverse)
+
+kegg_mono_up_result <- separate(data = kegg_mono_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_mono_up_result$RichFactor = kegg_mono_up_result$Count/sapply(kegg_mono_up_result$BgCount, as.numeric)
+
+kegg_macro_up_result <- separate(data = kegg_macro_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_macro_up_result$RichFactor = kegg_macro_up_result$Count/sapply(kegg_macro_up_result$BgCount, as.numeric)
+```
+
+
+```{r}
+# 作点图
+selected = kegg_mono_up_result[21:2,]   #选择数据
+selected$Description <- factor(selected$Description, levels=selected$Description, ordered=TRUE)
+
+ggplot(selected,aes(x=`RichFactor`,y=Description, size=Count,color=pvalue))+
+  geom_point()+
+  scale_color_gradientn(colors = c("red","green","blue"))+
+  labs(title="Statistics of Pathway Enrichment",size="Gene number", y="Pathway Name", x="Rich Factor")+
+  scale_x_continuous(limits=c())
+#ggsave("kegg.pdf", scale = 1)
+```
+
+
+
+
+```{r}
+# 选择kegg术语的上下调基因数
+kegg_terms <- c('Cytokine-cytokine receptor interaction', 'IL-17 signaling pathway', 'Toll-like receptor signaling pathway', 'RIG-I-like receptor signaling pathway', 'Chemokine signaling pathway', 'TNF signaling pathway', 'NF-kappa B signaling pathway', 'NOD-like receptor signaling pathway', 'T cell receptor signaling pathway', 'B cell receptor signaling pathway')
+
+kegg_terms <- c('Apoptosis', 'Necroptosis', 'Autophagy - animal', 'Ferroptosis')
+
+kegg_filter <- merge(kegg_up_result[kegg_up_result$Description %in% kegg_terms, c(2,10)], 
+                     kegg_down_result[kegg_down_result$Description %in% kegg_terms, c(2,10)], 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+kegg_filter$Description <- factor(kegg_filter$Description, levels=rev(kegg_terms), ordered=TRUE)
+library(reshape)
+kegg_filter = melt(kegg_filter, id=c('Description'))
+kegg_filter$variable <- factor(kegg_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 模糊选择kegg术语的上下调基因数
+kegg_term = 'signaling pathway'
+
+kegg_filter <- merge(subset(kegg_up_result, grepl(kegg_term, Description),select =c('Description', 'Count')),
+                     subset(kegg_down_result, grepl(kegg_term, Description),select =c('Description', 'Count')), 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+library(reshape)
+kegg_filter = melt(kegg_filter, id=c('Description'))
+kegg_filter$variable <- factor(kegg_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 作kegg术语上下调基因的条形图
+ggplot(kegg_filter, aes(x=Description, y=value, fill=variable))+
+  geom_bar(stat = 'identity', position = position_dodge(0.9))+
+  theme_classic()+ #设置风格
+  labs(title="", x='', y="Number of Genes")+ #设置标题
+  theme(legend.title=element_blank())+  #设置图例标题
+  theme(plot.title = element_text(size=20, hjust = 0.5))+  #设置标题格式
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+  
+  theme(axis.line=element_line(linetype=1,color="black",size=1))+
+  theme(axis.ticks=element_line(color="black",size=1,lineend = 1))+
+  coord_flip()  #横向
+ggsave("spermatid_zikv_death.pdf", scale = 1)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

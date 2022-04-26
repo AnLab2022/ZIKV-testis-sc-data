@@ -1,0 +1,228 @@
+---
+title: "KEGG富集分析"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library("clusterProfiler")
+library("org.Mm.eg.db")
+library("ggplot2")
+```
+
+
+```{r}
+# 导入基因差异表达数据
+spg_zikv <- read.csv('./output/sper/spg_zikv.csv')
+spc_zikv <- read.csv('./output/sper/spc_zikv.csv')
+spt_zikv <- read.csv('./output/sper/spt_zikv.csv')
+
+# 选择富集分析基因ID
+spg_zikv_up <- spg_zikv[(spg_zikv$avg_log2FC>0.25) & (spg_zikv$p_val<0.05),]$X
+spc_zikv_up <- spc_zikv[(spc_zikv$avg_log2FC>0.25) & (spc_zikv$p_val<0.05),]$X
+spt_zikv_up <- spc_zikv[(spt_zikv$avg_log2FC>0.25) & (spt_zikv$p_val<0.05),]$X
+
+spg_zikv_up <- bitr(spg_zikv_up, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+spc_zikv_up <- bitr(spc_zikv_up, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+spt_zikv_up <- bitr(spt_zikv_up, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+
+spg_zikv_down <- spg_zikv[(spg_zikv$avg_log2FC<(-0.25)) & (spg_zikv$p_val<0.05),]$X
+spc_zikv_down <- spc_zikv[(spc_zikv$avg_log2FC<(-0.25)) & (spc_zikv$p_val<0.05),]$X
+spt_zikv_down <- spc_zikv[(spt_zikv$avg_log2FC<(-0.25)) & (spt_zikv$p_val<0.05),]$X
+
+spg_zikv_down <- bitr(spg_zikv_down, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+spc_zikv_down <- bitr(spc_zikv_down, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+spt_zikv_down <- bitr(spt_zikv_down, fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = org.Mm.eg.db, drop = FALSE)$ENTREZID
+
+rm(spg_zikv, spc_zikv, spt_zikv)
+```
+
+```{r}
+# KEGG富集分析
+kegg_spg_zikv_up <- enrichKEGG(spg_zikv_up, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+kegg_spc_zikv_up <- enrichKEGG(spc_zikv_up, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+kegg_spt_zikv_up <- enrichKEGG(spt_zikv_up, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+
+kegg_spg_zikv_down <- enrichKEGG(spg_zikv_down, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+kegg_spc_zikv_down <- enrichKEGG(spc_zikv_down, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+kegg_spt_zikv_down <- enrichKEGG(spt_zikv_down, "mmu", keyType = "kegg", pvalueCutoff = 1, qvalueCutoff = 1, 
+                      minGSSize = 0, maxGSSize=100000)
+
+rm(spc_zikv_up, spg_zikv_up, spt_zikv_up, spc_zikv_down, spg_zikv_down, spt_zikv_down)
+```
+
+```{r}
+# 获得并保存KEGG分析数据
+kegg_spg_zikv_up_result <- kegg_spg_zikv_up@result
+kegg_spc_zikv_up_result <- kegg_spc_zikv_up@result
+kegg_spt_zikv_up_result <- kegg_spt_zikv_up@result
+write.csv(kegg_spg_zikv_up_result, file='./output/sper/kegg_spg_zikv_up.csv', row.names = FALSE)
+write.csv(kegg_spc_zikv_up_result, file='./output/sper/kegg_spc_zikv_up.csv', row.names = FALSE)
+write.csv(kegg_spt_zikv_up_result, file='./output/sper/kegg_spt_zikv_up.csv', row.names = FALSE)
+
+kegg_spg_zikv_down_result <- kegg_spg_zikv_down@result
+kegg_spc_zikv_down_result <- kegg_spc_zikv_down@result
+kegg_spt_zikv_down_result <- kegg_spt_zikv_down@result
+write.csv(kegg_spg_zikv_down_result, file='./output/sper/kegg_spg_zikv_down.csv', row.names = FALSE)
+write.csv(kegg_spc_zikv_down_result, file='./output/sper/kegg_spc_zikv_down.csv', row.names = FALSE)
+write.csv(kegg_spt_zikv_down_result, file='./output/sper/kegg_spt_zikv_down.csv', row.names = FALSE)
+
+rm(kegg_spc_zikv_up, kegg_spg_zikv_up, kegg_spt_zikv_up, kegg_spc_zikv_down, kegg_spg_zikv_down, kegg_spt_zikv_down)
+```
+
+
+
+```{r}
+# 读取KEGG文件
+kegg_spg_zikv_up_result <- read.csv("./output/sper/kegg_spg_zikv_up.csv")
+kegg_spc_zikv_up_result <- read.csv("./output/sper/kegg_spc_zikv_up.csv")
+kegg_spt_zikv_up_result <- read.csv("./output/sper/kegg_spt_zikv_up.csv")
+
+kegg_spg_zikv_down_result <- read.csv("./output/sper/kegg_spg_zikv_down.csv")
+kegg_spc_zikv_down_result <- read.csv("./output/sper/kegg_spc_zikv_down.csv")
+kegg_spt_zikv_down_result <- read.csv("./output/sper/kegg_spt_zikv_down.csv")
+```
+
+```{r}
+# 计算Rich Factor
+library(tidyverse)
+
+kegg_spg_zikv_up_result <- separate(data = kegg_spg_zikv_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spg_zikv_up_result$RichFactor = kegg_spg_zikv_up_result$Count/sapply(kegg_spg_zikv_up_result$BgCount, as.numeric)
+
+kegg_spc_zikv_up_result <- separate(data = kegg_spc_zikv_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spc_zikv_up_result$RichFactor = kegg_spc_zikv_up_result$Count/sapply(kegg_spc_zikv_up_result$BgCount, as.numeric)
+
+kegg_spt_zikv_up_result <- separate(data = kegg_spt_zikv_up_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spt_zikv_up_result$RichFactor = kegg_spt_zikv_up_result$Count/sapply(kegg_spt_zikv_up_result$BgCount, as.numeric)
+
+kegg_spg_zikv_down_result <- separate(data = kegg_spg_zikv_down_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spg_zikv_down_result$RichFactor = kegg_spg_zikv_down_result$Count/sapply(kegg_spg_zikv_down_result$BgCount, as.numeric)
+
+kegg_spc_zikv_down_result <- separate(data = kegg_spc_zikv_down_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spc_zikv_down_result$RichFactor = kegg_spc_zikv_down_result$Count/sapply(kegg_spc_zikv_down_result$BgCount, as.numeric)
+
+kegg_spt_zikv_down_result <- separate(data = kegg_spt_zikv_down_result, col = BgRatio, into = c("BgCount", "BgAll"), sep = "/")
+kegg_spt_zikv_down_result$RichFactor = kegg_spt_zikv_down_result$Count/sapply(kegg_spt_zikv_down_result$BgCount, as.numeric)
+```
+
+
+```{r}
+# 作点图
+selected = kegg_spg_zikv_up_result[20:1,]   #选择数据
+selected$Description <- factor(selected$Description, levels=selected$Description, ordered=TRUE)
+
+ggplot(selected,aes(x=`RichFactor`,y=Description, size=Count,color=pvalue))+
+  geom_point()+
+  theme_bw()+
+  scale_color_gradientn(colors = c("red","green","blue"))+
+  labs(title="Statistics of Pathway Enrichment",size="Gene number", y="Pathway Name", x="Rich Factor")+
+  scale_x_continuous(limits=c())
+#ggsave("kegg.pdf", scale = 1)
+```
+
+```{r}
+# 作条形图（上调）
+selected <- kegg_spt_zikv_up_result[10:1,]  #前十
+
+selected$Description <- factor(selected$Description, levels = selected$Description)
+ggplot(selected, aes(x=Description, y=-log10(qvalue)))+
+  geom_bar(stat = "identity", fill="#F8766D", color="black")+
+  geom_text(aes(label=Description), hjust=0, y=0.5, size=5)+
+  theme_classic()+
+  coord_flip()+  #横向
+  labs(x="", y='-log10 (q-value)', title="KEGG-term UP ZIKV")+
+  theme(axis.title.y=element_blank())+
+  theme(axis.text.y = element_blank())+
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(plot.title = element_text(size=20, hjust = 0))+
+  theme(axis.text.x = element_text(size=12))+ 
+  theme(axis.title.x = element_text(size=14))
+ggsave("./figure/sper/KEGG_up_spt_zikv_10.jpg", width = 7, height = 6)
+```
+
+```{r}
+# 作条形图（下调）
+selected <- kegg_spg_zikv_down_result[10:1,]
+
+selected$Description <- factor(selected$Description, levels = selected$Description)
+ggplot(selected, aes(x=Description, y=-log10(qvalue)))+
+  geom_bar(stat = "identity", fill="#619CFF", color="black")+
+  geom_text(aes(label=Description), hjust=0, y=0.1, size=5)+
+  theme_classic()+
+  coord_flip()+  #横向
+  labs(x="", y='-log10 (q-value)', title="KEGG-term DOWN ZIKV")+
+  theme(axis.title.y=element_blank())+
+  theme(axis.text.y = element_blank())+
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(plot.title = element_text(size=20, hjust = 0))+
+  theme(axis.text.x = element_text(size=12))+ 
+  theme(axis.title.x = element_text(size=14))
+ggsave("./figure/sper/KEGG_down_spg_zikv_10.jpg", width = 7, height = 6)
+```
+
+
+
+
+```{r}
+# 选择kegg术语的上下调基因数
+kegg_terms <- c('Apoptosis', "Autophagy - animal",  "Ferroptosis", "Necroptosis")
+
+kegg_filter <- merge(kegg_spg_zikv_up_result[kegg_spg_zikv_up_result$Description %in% kegg_terms, c(2,8)], 
+                     kegg_spg_zikv_down_result[kegg_spg_zikv_down_result$Description %in% kegg_terms, c(2,8)], 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+kegg_filter$Description <- factor(kegg_filter$Description, levels=rev(kegg_terms), ordered=TRUE)
+library(reshape)
+kegg_filter = melt(kegg_filter, id=c('Description'))
+kegg_filter$variable <- factor(kegg_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 模糊选择kegg术语的上下调基因数
+kegg_term = 'signaling pathway'
+
+kegg_filter <- merge(subset(kegg_spt_zikv_up_result, grepl(kegg_term, Description),select =c('Description', 'qvalue')),
+                     subset(kegg_spt_zikv_down_result, grepl(kegg_term, Description),select =c('Description', 'qvalue')), 
+                     by='Description',all=TRUE, suffixes=c('Up','Down'))
+kegg_filter <- kegg_filter[order(kegg_filter$qvalueUp), ]
+kegg_filter <- kegg_filter[10:1, ]
+kegg_filter <- kegg_filter[order(kegg_filter$qvalueUp), ]
+kegg_filter$Description <- factor(kegg_filter$Description, levels=rev(kegg_filter$Description), ordered=TRUE)
+library(reshape)
+kegg_filter = melt(kegg_filter, id=c('Description'))
+kegg_filter$variable <- factor(kegg_filter$variable, labels=c('Up','Down'))
+```
+
+
+```{r}
+# 作kegg术语上下调的条形图
+ggplot(kegg_filter, aes(x=Description, y=-log10(value), fill=variable))+
+  geom_bar(stat = 'identity', position = position_dodge(0.9), color="black")+
+  theme_classic()+ #设置风格
+  labs(x="", y='-log10 (q-value)', title="")+
+  theme(legend.title=element_blank())+  #设置图例标题
+  theme(axis.text.x = element_text(hjust = 1, size=12))+  
+  theme(axis.text.y = element_text(size=14))+  
+  theme(axis.line=element_line(linetype=1,color="black",size=1))+
+  theme(axis.ticks=element_line(color="black",size=1,lineend = 1))+
+  coord_flip()+  #横向
+  scale_y_continuous(expand = c(0,0))+  #y轴无空隙
+  theme(axis.title.x = element_text(size=14))+
+  theme(legend.text  = element_text(size=14))+
+  scale_fill_manual(values = c("#F8766D", "#619CFF"))
+ggsave("./figure/sper/KEGG_spg_zikv_cell death.jpg", width = 7, height = 4.5)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
